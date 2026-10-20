@@ -1,0 +1,1623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>食安哨 · 校园食堂 AI 食品安全巡检助手</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  background: #0f172a; color: #e2e8f0;
+  min-width: 0;
+}
+
+/* ====== 顶部导航 ====== */
+.nav {
+  background: linear-gradient(135deg, #1e293b, #334155);
+  color: #fff; height: 56px; display: flex; align-items: center;
+  padding: 0 24px; position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 2px 10px rgba(0,0,0,.3); border-bottom: 2px solid #3b82f6;
+}
+.nav .logo { font-size: 20px; font-weight: 800; letter-spacing: 1px; margin-right: 36px; color: #60a5fa; }
+.nav .logo::before { content: "🍽️ "; }
+.nav .tabs { display: flex; gap: 4px; flex: 1; }
+.nav .tab {
+  padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px;
+  transition: all .2s; color: rgba(255,255,255,.75);
+}
+.nav .tab:hover { background: rgba(59,130,246,.15); color: #fff; }
+.nav .tab.active { background: rgba(59,130,246,.25); color: #60a5fa; font-weight: 600; }
+.nav .right { display: flex; align-items: center; gap: 16px; font-size: 14px; }
+.nav .live-dot { width: 8px; height: 8px; background: #60a5fa; border-radius: 50%; display: inline-block; margin-right: 6px; }
+@keyframes pulse { 0%,100% { opacity:1; box-shadow:0 0 0 0 rgba(239,68,68,.6); } 50% { opacity:.6; box-shadow:0 0 0 6px rgba(239,68,68,0); } }
+.nav .bell { position: relative; cursor: pointer; font-size: 18px; }
+.nav .bell .badge {
+  position: absolute; top: -6px; right: -8px; background: #ef4444;
+  color: #fff; font-size: 11px; padding: 1px 5px; border-radius: 10px; min-width: 16px; text-align: center;
+}
+.nav .user { background: rgba(255,255,255,.1); padding: 5px 12px; border-radius: 20px; }
+
+/* ====== 页面容器 ====== */
+.page { display: none; padding: 24px; max-width: 1600px; margin: 0 auto; }
+.page.active { display: block; }
+
+/* ====== 通用卡片 ====== */
+.card {
+  background: #1e293b; border-radius: 12px; padding: 20px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.25); border: 1px solid #334155;
+}
+.card-title { font-size: 16px; font-weight: 700; margin-bottom: 14px; color: #f1f5f9; display: flex; align-items: center; gap: 8px; }
+
+/* ====== P1 监控中心主页面 ====== */
+.p1-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+.monitor-wrap { position: relative; }
+.monitor-frame {
+  position: relative; width: 100%; background: #000; border-radius: 10px;
+  overflow: hidden; border: 2px solid #3b82f6; aspect-ratio: 16/9;
+}
+.monitor-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.monitor-overlay {
+  position: absolute; top: 12px; left: 12px; right: 12px;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  pointer-events: none; z-index: 20;
+}
+.monitor-label {
+  background: rgba(0,0,0,.7); color: #fff; padding: 4px 10px; border-radius: 4px;
+  font-size: 12px; display: flex; align-items: center; gap: 6px;
+}
+.monitor-label .rec-dot { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; animation: pulse 1s infinite; }
+.monitor-time {
+  background: rgba(0,0,0,.7); color: #93c5fd; padding: 4px 10px; border-radius: 4px;
+  font-family: monospace; font-size: 12px;
+}
+
+/* 监控画面上的标注框 */
+.annotation-box {
+  position: absolute; border: 3px solid; border-radius: 4px;
+  z-index: 5; animation: boxFade .3s ease-out;
+}
+@keyframes boxFade { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
+.annotation-box .label {
+  position: absolute; padding: 3px 8px; font-size: 12px; font-weight: 700;
+  border-radius: 4px; color: #fff; white-space: nowrap;
+}
+.annotation-box .label.label-top { top: -28px; left: -3px; }
+.annotation-box .label.label-bottom { bottom: -28px; left: -3px; }
+
+/* 告警流 */
+.alert-stream { max-height: 520px; overflow-y: auto; }
+.alert-stream::-webkit-scrollbar { width: 6px; }
+.alert-stream::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+.alert-item {
+  display: flex; gap: 12px; padding: 12px; border-radius: 8px;
+  margin-bottom: 8px; cursor: pointer; transition: background .15s;
+  border-left: 4px solid transparent;
+}
+.alert-item:hover { background: #334155; }
+.alert-item.new { animation: alertSlide .4s ease-out; border-left-color: #ef4444; background: rgba(239,68,68,.1); }
+.alert-item.unconfirmed { border-left-color:#f59e0b; background:rgba(245,158,11,.08); }
+@keyframes alertSlide { from { opacity:0; transform:translateX(-20px); } to { opacity:1; transform:translateX(0); } }
+.alert-item .violation-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.alert-item .content { flex: 1; min-width: 0; }
+.alert-item .title { font-weight: 600; font-size: 14px; }
+.alert-item .meta { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+.alert-item .status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; white-space: nowrap; height: fit-content; }
+
+/* 底部 4 个数字卡 */
+.p1-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.stat-card {
+  background: #1e293b; border-radius: 10px; padding: 16px 20px;
+  border: 1px solid #334155;
+  cursor: pointer; transition: all .2s;
+}
+.stat-card:hover { border-color: #3b82f6; transform: translateY(-2px); }
+.stat-card .label { font-size: 13px; color: #94a3b8; margin-bottom: 4px; }
+.stat-card .num { font-size: 32px; font-weight: 800; }
+.stat-card .unit { font-size: 13px; color: #64748b; margin-left: 4px; font-weight: 400; }
+
+/* 饼图 */
+.p1-chart { height: 200px; margin-top: 16px; }
+
+/* ====== P2 监控详情 ====== */
+.p2-toolbar { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
+.cam-btn {
+  background: #334155; border: 1px solid #475569; color: #cbd5e1;
+  padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  transition: all .2s;
+}
+.cam-btn:hover { background: #475569; }
+.cam-btn.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+
+.p2-layout { display: grid; grid-template-columns: 3fr 1fr; gap: 16px; }
+.p2-detail-frame {
+  position: relative; background: #000; border-radius: 12px;
+  overflow: hidden; border: 2px solid #3b82f6; aspect-ratio: 16/10;
+}
+.p2-detail-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.p2-info-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+.p2-info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #334155; font-size: 14px; }
+.p2-info-row .key { color: #94a3b8; }
+.p2-info-row .val { font-weight: 600; }
+
+.viol-list { margin-top: 12px; }
+.viol-tag {
+  display: inline-block; padding: 3px 10px; margin: 2px;
+  border-radius: 4px; font-size: 12px; font-weight: 600;
+}
+
+/* ====== 告警推送通知 ====== */
+.alert-popup {
+  position: fixed; bottom: 22px; right: 20px; top: auto; z-index: 999;
+  background: linear-gradient(135deg, #7f1d1d, #991b1b);
+  border: 2px solid #ef4444; border-radius: 12px;
+  padding: 16px 20px; min-width: 300px; max-width: 360px;
+  box-shadow: 0 8px 30px rgba(239,68,68,.4);
+  animation: popupIn .35s ease-out;
+  cursor: pointer;
+}
+.alert-popup.unconfirmed { background:linear-gradient(135deg,#78350f,#92400e); border-color:#f59e0b; box-shadow:0 8px 30px rgba(245,158,11,.28); }
+@keyframes popupIn { from { opacity:0; transform:translateX(40px) scale(.95); } to { opacity:1; transform:translateX(0) scale(1); } }
+.alert-popup .popup-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.alert-popup .popup-title { font-weight: 700; font-size: 15px; color: #fff; display: flex; align-items: center; gap: 6px; }
+.alert-popup .popup-body { font-size: 13px; color: #fecaca; line-height: 1.5; }
+.alert-popup .popup-close { cursor: pointer; color: #fca5a5; font-size: 18px; }
+
+/* ====== P3 告警页 ====== */
+.p3-layout { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; }
+.p3-shot { background: #000; border-radius: 10px; overflow: hidden; position: relative; border: 1px solid #334155; }
+.p3-shot img { width: 100%; display: block; }
+.p3-fields .field-row { display: flex; padding: 10px 0; border-bottom: 1px solid #334155; font-size: 14px; }
+.p3-fields .field-key { width: 110px; color: #94a3b8; flex-shrink: 0; }
+.p3-fields .field-val { font-weight: 600; }
+.p3-fields textarea {
+  width: 100%; height: 80px; background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+  padding: 10px; margin-top: 12px; resize: vertical; font-family: inherit; color: #e2e8f0;
+}
+.p3-actions { display: flex; gap: 12px; margin-top: 16px; }
+
+/* ====== P4 台账 ====== */
+.p4-toolbar { display: flex; justify-content: space-between; margin-bottom: 14px; align-items: center; flex-wrap: wrap; gap: 10px; }
+.filter-group { display: flex; gap: 8px; }
+.filter-group select {
+  padding: 6px 12px; border: 1px solid #475569; border-radius: 6px;
+  font-size: 13px; background: #0f172a; color: #e2e8f0;
+}
+table.ledger { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.ledger th, table.ledger td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #334155; }
+table.ledger th { background: #334155; font-weight: 600; color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+table.ledger tr.highlight { background: rgba(59,130,246,.15) !important; }
+table.ledger tr.overdue { background: rgba(239,68,68,.12); color:#fecaca; }
+table.ledger tr:hover { background: rgba(71,85,105,.3); }
+
+/* ====== P5 历史 ====== */
+.p5-toolbar { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
+.p5-chart { height: 280px; margin-bottom: 20px; }
+.history-day { border: 1px solid #334155; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+.history-day-header {
+  padding: 14px 18px; background: #1e293b; cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: 600; font-size: 14px;
+}
+.history-day-body { padding: 14px 18px; border-top: 1px solid #334155; display: none; font-size: 13px; color: #94a3b8; }
+.history-day.open .history-day-body { display: block; }
+.history-day.open .history-day-header { background: #334155; }
+
+/* ====== 通用按钮 ====== */
+.btn { padding: 9px 20px; border-radius: 8px; border: none; font-size: 14px; cursor: pointer; font-weight: 600; transition: all .15s; }
+.btn-primary { background: #3b82f6; color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-secondary { background: #334155; color: #cbd5e1; border: 1px solid #475569; }
+.btn-secondary:hover { background: #475569; }
+.btn-danger { background: #ef4444; color: #fff; }
+.btn-success { background: #10b981; color: #fff; }
+.btn-danger:hover { background: #dc2626; }
+.btn-success:hover { background: #059669; }
+
+/* ====== 状态标签 ====== */
+.status-tag { padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.status-passed { background: rgba(16,185,129,.2); color: #34d399; }
+.status-rejected { background: rgba(239,68,68,.2); color: #f87171; }
+.status-pending { background: rgba(245,158,11,.2); color: #fbbf24; }
+.status-unconfirmed { background: rgba(245,158,11,.2); color: #fbbf24; }
+.status-rectifying { background: rgba(249,115,22,.2); color: #fdba74; }
+.status-rectified { background: rgba(16,185,129,.2); color: #34d399; }
+.status-overdue { background: rgba(239,68,68,.2); color: #f87171; }
+
+/* 通用等级标签 */
+.tag-high { background: rgba(239,68,68,.2); color: #f87171; }
+.tag-mid { background: rgba(245,158,11,.2); color: #fbbf24; }
+.tag-low { background: rgba(59,130,246,.2); color: #60a5fa; }
+
+/* Toast */
+.toast {
+  position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+  background: #1e293b; color: #fff; padding: 10px 22px; border-radius: 8px;
+  font-size: 14px; z-index: 998; opacity: 0; transition: opacity .3s;
+  border: 1px solid #475569;
+}
+.toast.show { opacity: 1; }
+
+.disclaimer {
+  margin-top: 20px; padding: 12px 16px; background: rgba(245,158,11,.1); border-radius: 8px;
+  font-size: 12px; color: #fbbf24; text-align: center; border: 1px solid rgba(245,158,11,.2);
+}
+
+.empty-state { text-align: center; padding: 60px 20px; color: #64748b; font-size: 14px; }
+
+/* 标定模式 */
+.calibration-mode .monitor-frame,
+.calibration-mode .p2-detail-frame { cursor: crosshair; outline: 3px dashed #f59e0b; outline-offset: 2px; }
+.calibration-hint {
+  position: fixed; top: 64px; right: 16px; z-index: 999;
+  background: #f59e0b; color: #fff; padding: 8px 14px; border-radius: 6px;
+  font-size: 13px; font-weight: 600; box-shadow: 0 4px 12px rgba(245,158,11,.3);
+}
+.calibration-rect {
+  position: absolute; border: 2px dashed #f59e0b; background: rgba(245,158,11,.15);
+  pointer-events: none; z-index: 50;
+}
+
+/* 暂停/恢复按钮 */
+.sim-controls { display: flex; gap: 8px; margin-left: auto; align-items: center; }
+.sim-controls .sim-status { font-size: 12px; color: #94a3b8; }
+.sim-controls button {
+  background: #334155; border: 1px solid #475569; color: #cbd5e1;
+  padding: 4px 12px; border-radius: 4px; font-size: 12px; cursor: pointer;
+}
+.sim-controls button:hover { background: #475569; }
+
+/* ====== AI 识别 / 配置 ====== */
+.ai-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+.ai-toolbar .ai-status { color:#94a3b8; font-size:12px; margin-left:auto; }
+.ai-recognition-grid { display:grid; grid-template-columns: 1.2fr 1fr; gap:16px; margin-bottom:16px; }
+.upload-zone { border:2px dashed #475569; border-radius:10px; min-height:220px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; background:#111c2e; cursor:pointer; transition:border-color .2s, background .2s; text-align:center; padding:20px; }
+.upload-zone:hover, .upload-zone.dragover { border-color:#60a5fa; background:#172a46; }
+.upload-zone input { display:none; }
+.upload-zone .upload-icon { font-size:34px; }
+.upload-zone strong { color:#f1f5f9; font-size:15px; }
+.upload-zone span { color:#94a3b8; font-size:12px; }
+.ai-preview-frame { position:relative; height:260px; min-height:220px; background:#020617; border-radius:10px; overflow:hidden; border:1px solid #334155; display:flex; align-items:center; justify-content:center; }
+.ai-preview-frame img { width:100%; height:100%; object-fit:contain; display:block; }
+.source-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:4px; background:rgba(59,130,246,.18); color:#93c5fd; font-size:11px; font-weight:600; }
+.source-badge.sample { background:rgba(245,158,11,.16); color:#fbbf24; }
+.ai-result-list { margin-top:12px; display:grid; gap:8px; }
+.ai-result-item { border:1px solid #334155; border-radius:8px; padding:10px 12px; background:#172235; }
+.ai-result-item .result-head { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+.ai-result-item .result-meta { color:#94a3b8; font-size:12px; margin-top:5px; line-height:1.5; }
+.config-backdrop, .modal-backdrop { position:fixed; inset:0; background:rgba(2,6,23,.72); z-index:1000; display:none; }
+.config-backdrop.open, .modal-backdrop.open { display:block; }
+.config-drawer { position:absolute; top:0; right:0; height:100%; width:min(460px, 100%); background:#1e293b; border-left:1px solid #475569; padding:22px; overflow:auto; box-shadow:-12px 0 30px rgba(0,0,0,.35); }
+.config-drawer h2 { font-size:18px; margin-bottom:8px; }
+.config-drawer .config-help { color:#94a3b8; font-size:12px; line-height:1.6; margin-bottom:18px; }
+.config-row { margin-bottom:14px; }
+.config-row label { display:flex; justify-content:space-between; gap:10px; color:#cbd5e1; font-size:13px; margin-bottom:6px; }
+.config-row input[type=range] { width:100%; accent-color:#3b82f6; }
+.vi-config-item { border:1px solid #334155; border-radius:8px; padding:10px; margin-bottom:8px; }
+.vi-config-item .vi-config-head { display:flex; align-items:center; gap:8px; }
+.vi-config-item textarea { width:100%; min-height:48px; margin-top:8px; resize:vertical; background:#0f172a; border:1px solid #475569; border-radius:6px; color:#e2e8f0; padding:7px; font-family:inherit; font-size:12px; }
+.drawer-actions { display:flex; gap:8px; margin-top:18px; position:sticky; bottom:0; background:#1e293b; padding-top:10px; }
+.modal-card { width:min(520px, calc(100% - 28px)); margin:10vh auto 0; background:#1e293b; border:1px solid #475569; border-radius:12px; padding:22px; box-shadow:0 12px 40px rgba(0,0,0,.4); }
+.modal-card h2 { font-size:18px; margin-bottom:16px; }
+.form-field { margin-bottom:12px; }
+.form-field label { display:block; color:#94a3b8; font-size:12px; margin-bottom:5px; }
+.form-field input, .form-field select { width:100%; padding:9px 10px; background:#0f172a; border:1px solid #475569; border-radius:7px; color:#e2e8f0; font-family:inherit; }
+.form-field input[type=file] { padding:7px; }
+.modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+.rectification-photo { color:#94a3b8; font-size:12px; margin-top:6px; }
+.rectification-photo-preview { max-width:100%; max-height:180px; display:none; object-fit:contain; margin-top:8px; border-radius:6px; border:1px solid #475569; }
+.footer-disclaimer { max-width:1600px; margin:0 auto; padding:0 24px 20px; text-align:center; color:#64748b; font-size:11px; }
+
+@media (max-width: 768px) {
+  .nav { height:auto; min-height:56px; padding:10px 14px; flex-wrap:wrap; gap:8px; }
+  .nav .logo { margin-right:8px; font-size:18px; }
+  .nav .tabs { order:3; width:100%; overflow-x:auto; padding-bottom:2px; }
+  .nav .tab { padding:7px 11px; white-space:nowrap; font-size:12px; }
+  .nav .right { margin-left:auto; gap:8px; font-size:12px; }
+  .nav .right > div:first-child { display:none !important; }
+  .page { padding:14px; }
+  .p1-grid, .p2-layout, .p3-layout, .ai-recognition-grid { grid-template-columns:1fr; }
+  .p1-stats { grid-template-columns:repeat(2, 1fr); }
+  .p2-detail-frame { aspect-ratio:16/9; }
+  .p4-toolbar { align-items:flex-start; }
+  .filter-group { flex-wrap:wrap; }
+  table.ledger { min-width:760px; }
+  #page-p4 .card { overflow-x:auto; }
+  .sim-controls { margin-left:0; }
+  .ai-toolbar .ai-status { margin-left:0; width:100%; }
+  .alert-popup { left:14px; right:14px; bottom:14px; min-width:0; max-width:none; }
+}
+</style>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<div class="nav">
+  <div class="logo">食安哨</div>
+  <div class="tabs" id="navTabs">
+    <div class="tab active" data-page="p1">巡检面板</div>
+    <div class="tab" data-page="p2">AI 识别</div>
+    <div class="tab" data-page="p3">告警中心</div>
+    <div class="tab" data-page="p4">巡检台账</div>
+    <div class="tab" data-page="p5">历史记录</div>
+  </div>
+  <div class="right">
+    <div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#94a3b8">
+      <span class="live-dot"></span>AI 辅助巡检
+    </div>
+    <div class="bell" onclick="goPage('p3')">🔔 <span class="badge" id="bellBadge">0</span></div>
+    <label class="user">👤 <select id="roleSelect" onchange="switchRole(this.value)" style="background:transparent;border:0;color:inherit;font:inherit;outline:0"><option value="inspector">检查员</option><option value="manager">集团管理者</option></select></label>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ============ P1 监控中心（首页） ============ -->
+<div class="page active" id="page-p1">
+  <div class="p1-grid">
+    <!-- 左侧：实时监控画面 -->
+    <div class="card monitor-wrap">
+      <div class="card-title">📹 巡检画面 · <span id="p1CamTitle">CAM-01（后厨操作区）</span></div>
+      <div class="monitor-frame" id="p1Monitor">
+        <img src="" id="p1Img" />
+        <div class="monitor-overlay">
+          <div class="monitor-label"><span class="rec-dot"></span><span id="p1ImageSource">AI 生成示意图</span> · <span id="p1CamCode">CAM-01</span></div>
+          <div class="monitor-time" id="p1Time">--:--:--</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:#94a3b8">
+        💡 可在「AI 识别」页上传现场画面；内置图片为 AI 生成示意图，样例数据仅用于演示告警、复核与台账流程。
+      </div>
+    </div>
+
+    <!-- 右侧：实时告警流 -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between">
+        <span>🔔 实时告警流</span>
+        <span style="font-size:12px;color:#64748b;font-weight:400" id="unreadCount">未读 0</span>
+      </div>
+      <div class="alert-stream" id="alertStream"></div>
+    </div>
+  </div>
+
+  <!-- 底部 4 个数字卡 + 饼图 -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:14px"><div class="card-title" style="margin:0">📊 今日概况</div><span style="font-size:12px;color:#94a3b8">误报率 <b id="p1FalseAlarm" style="color:#fbbf24">0%</b></span></div>
+      <div class="sim-controls">
+        <span class="sim-status">离线演示数据</span>
+        <button onclick="goPage('p2')">📷 上传画面识别</button>
+        <button onclick="triggerNow()">🔊 生成示例告警</button>
+      </div>
+    </div>
+    <div class="p1-stats">
+      <div class="stat-card">
+        <div class="label">今日正式告警总数</div>
+        <div><span class="num" style="color:#f87171" id="p1Total">0</span><span class="unit">起</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="label">待处理</div>
+        <div><span class="num" style="color:#fbbf24" id="p1Pending">0</span><span class="unit">起</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="label">已处理</div>
+        <div><span class="num" style="color:#34d399" id="p1Done">0</span><span class="unit">起</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="label">今日评分</div>
+        <div><span class="num" style="color:#60a5fa" id="p1Score">95.0</span><span class="unit">分</span></div>
+      </div>
+    </div>
+    <div class="p1-chart" id="p1Pie"></div>
+  </div>
+</div>
+
+<!-- ============ P2 AI 识别 ============ -->
+<div class="page" id="page-p2">
+  <div class="card" style="margin-bottom:16px">
+    <div class="ai-toolbar">
+      <div class="card-title" style="margin:0">🤖 AI 识别</div>
+      <button class="btn btn-secondary" onclick="openConfig()">⚙ 判定标准配置</button>
+      <span class="ai-status" id="aiServiceStatus">未上传画面</span>
+    </div>
+    <div class="ai-recognition-grid">
+      <label class="upload-zone" id="uploadZone" for="imageInput">
+        <input id="imageInput" type="file" accept="image/*" onchange="handleImageUpload(event)">
+        <div class="upload-icon">⬆</div>
+        <strong>上传现场画面</strong>
+        <span>点击选择或将 JPG / PNG 拖拽到此处</span>
+        <span>也可使用内置 AI 生成示意图进行离线演示</span>
+      </label>
+      <div class="ai-preview-frame" id="aiPreviewFrame">
+        <div class="empty-state" id="aiPreviewEmpty" style="padding:30px">等待上传图片</div>
+        <img id="aiPreviewImg" alt="待识别巡检画面" style="display:none">
+        <span class="source-badge sample" id="aiSourceBadge" style="display:none;position:absolute;top:10px;left:10px">示例数据</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <label style="font-size:12px;color:#94a3b8">所属食堂 <select id="uploadCanteen" style="margin-left:5px;padding:7px;background:#0f172a;border:1px solid #475569;border-radius:6px;color:#e2e8f0"><option>一号食堂</option><option>二号食堂</option><option>三号食堂</option></select></label>
+      <button class="btn btn-primary" id="recognizeBtn" onclick="recognizeUploaded()" disabled>开始识别</button>
+      <button class="btn btn-secondary" onclick="useSampleImage()">使用内置样例</button>
+      <button class="btn btn-secondary" id="sampleResultBtn" onclick="createSampleResult()" disabled>生成示例结果</button>
+      <span style="font-size:12px;color:#64748b">阈值：<b id="thresholdInline">85%</b> · 低于阈值将标记为「待确认」</span>
+    </div>
+  </div>
+
+  <div class="p2-toolbar">
+    <span style="font-size:14px;color:#94a3b8">样例摄像头：</span>
+    <button class="cam-btn active" onclick="switchCam(this, 'CAM-01')">后厨操作区</button>
+    <button class="cam-btn" onclick="switchCam(this, 'CAM-02')">备餐间</button>
+    <button class="cam-btn" onclick="switchCam(this, 'CAM-03')">洗消间</button>
+    <button class="cam-btn" onclick="switchCam(this, 'CAM-04')">库房</button>
+    <button class="cam-btn" onclick="switchCam(this, 'CAM-05')">就餐区</button>
+    <div class="sim-controls">
+      <button onclick="useSampleImage()">🧪 载入样例</button>
+    </div>
+  </div>
+
+  <div class="p2-layout">
+    <div class="card">
+      <div class="p2-detail-frame" id="p2Frame">
+        <img src="" id="p2Img" />
+        <div class="monitor-overlay">
+          <div class="monitor-label"><span class="rec-dot"></span>REC · <span id="p2CamLabel">CAM-01</span></div>
+          <div class="monitor-time" id="p2Time">--:--:--</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:#64748b">
+        💡 按 <kbd style="background:#334155;padding:2px 8px;border-radius:4px">M</kbd> 键进入标定模式，在图片上拖拽框选即可获取原图像素坐标
+      </div>
+    </div>
+
+    <div class="p2-info-card">
+      <div class="card-title" style="margin-bottom:16px">🤖 识别结果</div>
+      <div id="p2DetectResult" style="font-size:14px;color:#64748b;padding:30px 0;text-align:center">
+        上传画面后开始识别；样例结果会明确标注为示例数据
+      </div>
+      <div id="p2ViolList" style="display:none">
+        <div style="font-size:13px;color:#94a3b8;margin:16px 0 8px">累计违规类型</div>
+        <div class="viol-list" id="p2ViolTags"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ P3 告警处理 ============ -->
+<div class="page" id="page-p3">
+  <div class="card">
+    <div class="card-title">⚠️ 告警详情 <span style="font-weight:400;color:#64748b;font-size:14px" id="p3Subtitle"></span></div>
+  </div>
+
+  <div class="p3-layout">
+    <div class="card p3-shot" id="p3Shot">
+      <img src="" id="p3Img" style="display:none" />
+      <div class="empty-state" id="p3ImagePlaceholder" style="padding:60px 20px">选择一条记录查看巡检画面</div>
+    </div>
+    <div class="card p3-fields">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:18px;color:#f1f5f9;margin:0">告警 #<span id="p3Id">—</span></h2>
+        <span class="status-tag tag-high" id="p3Level">高</span>
+      </div>
+      <div class="field-row"><div class="field-key">触发时间</div><div class="field-val" id="p3Time">—</div></div>
+      <div class="field-row"><div class="field-key">摄像头</div><div class="field-val" id="p3Cam">CAM-01</div></div>
+      <div class="field-row"><div class="field-key">位置</div><div class="field-val" id="p3Location">一号食堂 · 后厨操作区</div></div>
+      <div class="field-row"><div class="field-key">违规类型</div><div class="field-val" id="p3Type">—</div></div>
+      <div class="field-row"><div class="field-key">AI 置信度</div><div class="field-val" id="p3Conf">—</div></div>
+      <div class="field-row"><div class="field-key">数据来源</div><div class="field-val" id="p3Source">—</div></div>
+      <div class="field-row"><div class="field-key">当前状态</div><div class="field-val"><span class="status-tag status-pending" id="p3Status">待复核</span></div></div>
+
+      <div style="margin-top:16px;padding:12px;background:#172235;border:1px solid #334155;border-radius:8px">
+        <div class="card-title" style="margin-bottom:6px">🧠 AI 判定依据</div>
+        <div id="p3Rationale" style="font-size:13px;color:#cbd5e1;line-height:1.6">—</div>
+      </div>
+      <details style="margin-top:10px;color:#94a3b8;font-size:12px">
+        <summary style="cursor:pointer">本次判定标准（提示词）</summary>
+        <pre id="p3Prompt" style="white-space:pre-wrap;font:inherit;color:#cbd5e1;background:#0f172a;padding:10px;border-radius:6px;margin-top:8px"></pre>
+      </details>
+
+      <div style="margin-top:20px">
+        <div class="card-title" style="margin-bottom:8px">复核意见（可选）</div>
+        <textarea id="p3Remark" placeholder="请填写现场复核说明，如：确认厨师确实未戴帽 / 该区域正在清洁无食材存放..."></textarea>
+      </div>
+
+      <div class="p3-actions" id="p3Actions" style="display:none">
+        <button class="btn btn-success" id="reviewPassBtn" onclick="reviewPass()">✓ 复核通过 — 指派整改</button>
+        <button class="btn btn-danger" id="reviewRejectBtn" onclick="reviewReject()">✗ 驳回 — AI 误报</button>
+      </div>
+      <div id="p3ActionsHint" style="margin-top:10px;font-size:12px;color:#94a3b8">
+        尚未选择告警记录：请先在「巡检面板」或「巡检台账」中点击一条告警，再回到此页复核。
+      </div>
+      <div id="rectificationPanel" style="display:none;margin-top:14px;padding:12px;border:1px solid #334155;border-radius:8px">
+        <div class="card-title" style="margin-bottom:6px">🛠 整改跟踪</div>
+        <div id="rectificationInfo" style="font-size:13px;color:#cbd5e1;line-height:1.6"></div>
+        <div class="form-field" style="margin-top:10px"><label for="rectificationPhoto">整改照片（可选，压缩后暂存于本机）</label><input id="rectificationPhoto" type="file" accept="image/*" onchange="handleRectificationPhoto(event)"></div>
+        <div class="rectification-photo" id="rectificationPhotoName"></div>
+        <img class="rectification-photo-preview" id="rectificationPhotoPreview" alt="整改照片预览">
+        <button class="btn btn-success" style="margin-top:10px" onclick="completeRectification()">标记整改完成</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ P4 巡检台账 ============ -->
+<div class="page" id="page-p4">
+  <div class="card">
+    <div class="p4-toolbar">
+      <div class="card-title" style="margin:0">📋 巡检台账 <span style="font-size:12px;color:#64748b;font-weight:400;margin-left:8px">事件与处置留痕 · 正式统计以人工复核为准</span></div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div class="filter-group">
+          <select id="p4FilterDate" onchange="renderP4()"><option value="all">日期：全部</option><option value="today">今日</option><option value="7">近 7 天</option></select>
+          <select id="p4FilterType" onchange="renderP4()"><option value="">类型：全部</option><option value="V1">V1 未戴帽/口罩</option><option value="V2">V2 操作台油污</option><option value="V3">V3 食材落地</option><option value="V4">V4 垃圾桶未盖</option><option value="V5">V5 虫害滋生</option></select>
+        </div>
+        <button class="btn btn-primary" onclick="exportCSV()">导出 CSV</button>
+      </div>
+    </div>
+    <table class="ledger" id="p4Table">
+      <thead>
+        <tr>
+          <th>序号</th><th>时间</th><th>位置 / 摄像头</th><th>违规类型</th><th>置信度</th><th>复核人</th><th>整改期限</th><th>整改状态</th><th>状态</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="p4Body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============ P5 历史汇总 ============ -->
+<div class="page" id="page-p5">
+  <div class="card">
+    <div class="p5-toolbar">
+      <select id="p5FilterDays" onchange="renderP5()"><option value="7">近 7 天</option><option value="30">近 30 天</option></select>
+      <select id="p5FilterCanteen" onchange="renderP5()"><option value="all">全部食堂</option><option value="一号食堂">一号食堂</option><option value="二号食堂">二号食堂</option><option value="三号食堂">三号食堂</option></select>
+      <span id="p5RoleLabel" style="font-size:12px;color:#94a3b8">检查员视图</span>
+      <button class="btn btn-secondary" style="margin-left:auto" onclick="exportCSV()">导出汇总</button>
+    </div>
+    <div id="p5MetricNote" style="font-size:11px;color:#64748b;margin:-4px 0 8px">评分按当前处置状态估算，仅用于原型演示。</div>
+    <div id="p5Chart" class="p5-chart"></div>
+    <div id="p5HistoryList"></div>
+    <div class="disclaimer">图表中的示例数据用于演示界面与流程，不代表真实巡检结论；待确认结果与驳回误报记录不计入正式违规统计。</div>
+  </div>
+</div>
+
+<div class="config-backdrop" id="configBackdrop" onclick="if(event.target===this)closeConfig()">
+  <aside class="config-drawer">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2>判定标准配置</h2><button class="btn btn-secondary" onclick="closeConfig()">关闭</button></div>
+    <div class="config-help">阈值与判定说明保存在本机浏览器。此地址会接收压缩图片；请仅配置经授权的服务端代理，不要在前端填写或保存模型密钥。</div>
+    <div class="config-row"><label for="modelEndpoint">识别服务代理地址</label><input id="modelEndpoint" type="url" placeholder="https://your-server.example/api/inspect" style="width:100%;padding:8px;background:#0f172a;border:1px solid #475569;border-radius:6px;color:#e2e8f0"></div>
+    <div class="config-row"><label for="thresholdInput">置信度阈值 <b id="thresholdValue">85%</b></label><input id="thresholdInput" type="range" min="50" max="99" value="85" oninput="updateThresholdLabel(this.value)"></div>
+    <div id="violationConfigList"></div>
+    <div class="drawer-actions"><button class="btn btn-primary" onclick="saveConfig()">保存配置</button><button class="btn btn-secondary" onclick="resetConfig()">恢复默认</button></div>
+  </aside>
+</div>
+
+<div class="modal-backdrop" id="rectificationModal">
+  <div class="modal-card">
+    <h2>指派整改</h2>
+    <div style="font-size:13px;color:#94a3b8;margin:-8px 0 14px">复核确认后创建整改任务，未完成前记录保持待处理。</div>
+    <div class="form-field"><label for="rectificationAssignee">整改责任人</label><select id="rectificationAssignee"><option>食堂负责人</option><option>后厨班组长</option><option>值班管理员</option></select></div>
+    <div class="form-field"><label for="rectificationDue">整改期限</label><input id="rectificationDue" type="datetime-local"></div>
+    <div class="modal-actions"><button class="btn btn-secondary" onclick="closeRectificationModal()">取消</button><button class="btn btn-primary" onclick="assignRectification()">确认指派</button></div>
+  </div>
+</div>
+
+<div class="footer-disclaimer">食安哨为辅助巡检原型；示例数据不代表真实巡检结论。AI 识别结论须经人工复核，方可纳入正式台账。</div>
+
+<script>
+// ========== 全局配置 ==========
+// 违规项基本信息（名称/颜色/等级/置信度）
+const VIOLATIONS = {
+  V1: { name: "未佩戴工作帽/口罩", color: "#f5222d", level: "高", conf: 0.96, standard: "检查后厨操作人员是否按规定佩戴工作帽和口罩；仅在画面清晰可见且确有缺失时判定违规。" },
+  V2: { name: "操作台油污、杂物堆积", color: "#fa8c16", level: "中", conf: 0.93, standard: "检查操作台是否存在明显油污或与操作无关的杂物堆积，正常器具和食材不应误判。" },
+  V3: { name: "食材落地存放", color: "#faad14", level: "中", conf: 0.91, standard: "检查食材或盛放容器是否直接放置于地面；画面证据不足时降低置信度。" },
+  V4: { name: "垃圾桶未加盖", color: "#1677ff", level: "低", conf: 0.89, standard: "检查厨余垃圾桶是否敞开或未加盖；被遮挡、无法确认桶盖状态时不作确定判断。" },
+  V5: { name: "虫害滋生", color: "#722ed1", level: "高", conf: 0.95, standard: "检查操作区域是否可见蟑螂、苍蝇等虫害迹象；普通污渍或纹理不得直接判断为虫害。" },
+};
+
+// 摄像头配置：每个摄像头有独立图片、尺寸、以及各自的违规框坐标
+// 标定方法：切到对应摄像头 → 按 M 键 → 拖拽框选 → 控制台输出坐标 → 粘贴替换
+const CAMS = {
+  'CAM-01': {
+    label: '后厨操作区',
+    img: 'images/cam01.jpg',
+    sourceLabel: 'AI 生成示意图',
+    img_w: 2240, img_h: 1680,
+    violations: {
+      V1: { x: 1000, y: 330, w: 190, h: 200 },   // 厨师头部（未戴帽/口罩）
+      V2: { x: 100, y: 670, w: 950, h: 250 },    // 左侧操作台油污杂物
+      V3: { x: 490, y: 1080, w: 760, h: 390 },   // 地上白菜胡萝卜
+      V4: { x: 1440, y: 920, w: 650, h: 760 },   // 右侧大垃圾桶未加盖
+      V5: { x: 1530, y: 680, w: 600, h: 380 },   // 垃圾桶周边苍蝇群
+    }
+  },
+  'CAM-02': {
+    label: '备餐间',
+    sourceLabel: '内置演示样例图',
+    img: 'images/cam02.jpg',
+    img_w: 2560, img_h: 1440,
+    violations: {
+      V1: { x: 1500, y: 400, w: 180, h: 200 },   // 右侧厨师头部（未戴帽/口罩）
+      V2: { x: 450, y: 680, w: 800, h: 440 },    // 左侧操作台散落菜叶残渣
+    }
+  },
+  'CAM-03': {
+    label: '洗消间',
+    sourceLabel: '内置演示样例图',
+    img: 'images/cam03.jpg',
+    img_w: 2560, img_h: 1440,
+    violations: {
+      V2: { x: 60, y: 530, w: 1420, h: 630 },    // 水槽油污残渣
+      V3: { x: 230, y: 800, w: 1330, h: 620 },   // 地面脏碗碟堆放
+    }
+  },
+  'CAM-04': {
+    label: '库房',
+    sourceLabel: '内置演示样例图',
+    img: 'images/cam04.jpg',
+    img_w: 2560, img_h: 1440,
+    violations: {
+      V3: { x: 250, y: 900, w: 1700, h: 520 },   // 地面散落杂物塑料袋
+      V5: { x: 1800, y: 0, w: 740, h: 320 },     // 右上角蜘蛛网
+    }
+  },
+  'CAM-05': {
+    label: '就餐区',
+    sourceLabel: '内置演示样例图',
+    img: 'images/cam05.jpg',
+    img_w: 2560, img_h: 1440,
+    violations: {
+      V2: { x: 1100, y: 850, w: 1100, h: 570 },  // 地面残渣污渍
+      V3: { x: 1200, y: 1000, w: 600, h: 380 },  // 地面散落垃圾袋残渣
+      V4: { x: 1940, y: 630, w: 450, h: 400 },   // 右侧垃圾桶未加盖
+    }
+  },
+};
+
+// ========== 数据层 ==========
+const DEFAULT_THRESHOLD = 0.85;
+const STORE_ALERTS = 'sas_alerts_v3';
+const STORE_CONFIG = 'sas_config_v3';
+const STORE_ROLE = 'sas_role_v2';
+let config = loadConfig();
+let allAlerts = loadAlerts();
+let pendingAlerts = [];
+let currentAlert = null;
+let highlightId = null;
+let currentCam = 'CAM-01';
+let currentRole = localStorage.getItem(STORE_ROLE) === 'manager' ? 'manager' : 'inspector';
+let selectedImageFile = null;
+let selectedImageUrl = '';
+let selectedImageIsSample = false;
+let aiResults = [];
+let sampleSequence = 0;
+
+function defaultConfig() {
+  // endpoint 预置真实云函数网关地址（部署方案 5.1：评委打开无需手动配置）
+  return { threshold: DEFAULT_THRESHOLD, endpoint: 'https://ai-competition-demo-d0b969af9fbc-1510945339.ap-shanghai.app.tcloudbase.com/detect', violations: Object.fromEntries(Object.entries(VIOLATIONS).map(([k, v]) => [k, { enabled: true, standard: v.standard }])) };
+}
+function loadConfig() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORE_CONFIG) || 'null');
+    const base = defaultConfig();
+    return stored ? { ...base, ...stored, violations: { ...base.violations, ...(stored.violations || {}) } } : base;
+  } catch { return defaultConfig(); }
+}
+function loadAlerts() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORE_ALERTS) || 'null');
+    if (Array.isArray(stored)) return stored;
+  } catch { /* corrupt demo state is reseeded below */ }
+  return [];
+}
+function persistAlerts() {
+  try {
+    localStorage.setItem(STORE_ALERTS, JSON.stringify(allAlerts.map(a => ({ ...a, imageUrl: '' }))));
+  } catch {
+    toast('本机存储空间不足，整改照片未保存；请移除大图片后重试');
+  }
+  pendingAlerts = allAlerts.filter(a => a.status === 'pending');
+}
+function persistConfig() {
+  localStorage.setItem(STORE_CONFIG, JSON.stringify(config));
+}
+function localDateTime(date = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function promptFor(vi) {
+  return `请检查画面是否符合「${VIOLATIONS[vi].name}」判定标准：${config.violations[vi]?.standard || VIOLATIONS[vi].standard}。仅根据可见证据判断，输出违规类型、0-1 置信度、位置描述、归一化框坐标及判定依据；证据不充分时降低置信度。`;
+}
+function makeAlert(vi, cam, options = {}) {
+  const timestamp = options.time || localDateTime();
+  const canteen = options.canteen || '一号食堂';
+  const confidence = Number(options.confidence ?? VIOLATIONS[vi].conf);
+  return {
+    id: `A${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    time: timestamp, lastSeen: timestamp, camera: cam, canteen,
+    location: `${canteen} · ${CAMS[cam]?.label || '上传画面'}`,
+    violation: vi, confidence,
+    status: options.status || (confidence < config.threshold ? 'unconfirmed' : 'pending'),
+    reviewer: options.reviewer || '', remark: options.remark || '',
+    source: options.source || 'sample', sample: (options.source || 'sample') === 'sample',
+    imageSource: options.imageSource || ((options.source || 'sample') === 'sample' ? 'sample_image' : 'upload'),
+    imageUrl: options.imageUrl || '', imageFileName: options.imageFileName || '',
+    rationale: options.rationale || `画面中可见疑似「${VIOLATIONS[vi].name}」特征；本条为离线样例解释，不代表模型推理结果。`,
+    prompt: options.prompt || promptFor(vi), box: options.box || null,
+    count: Number(options.count || 1), rectification: options.rectification || null,
+  };
+}
+
+function seedSamples() {
+  if (allAlerts.length) return;
+  const now = Date.now();
+  const seed = [
+    { vi: 'V1', cam: 'CAM-01', canteen: '一号食堂', status: 'rectified', reviewer: '张检查员', ago: 50, conf: .96 },
+    { vi: 'V1', cam: 'CAM-02', canteen: '二号食堂', status: 'rectifying', reviewer: '张检查员', ago: 35, conf: .95, owner: '食堂负责人' },
+    { vi: 'V2', cam: 'CAM-02', canteen: '二号食堂', status: 'unconfirmed', reviewer: '', ago: 20, conf: .72 },
+    { vi: 'V3', cam: 'CAM-01', canteen: '一号食堂', status: 'rejected', reviewer: '张检查员', ago: 12, conf: .91 },
+    { vi: 'V3', cam: 'CAM-03', canteen: '三号食堂', status: 'pending', reviewer: '', ago: 5, conf: .89 },
+  ];
+  allAlerts = seed.map((item, i) => {
+    const record = makeAlert(item.vi, item.cam, {
+      ...item, confidence: item.conf, time: localDateTime(new Date(now - item.ago * 60000)),
+      rationale: `样例画面中展示了${VIOLATIONS[item.vi].name}的参考位置；此处说明与框选结果为演示数据。`,
+    });
+    if (item.status === 'rectifying') {
+      const due = new Date(now + 90 * 60000);
+      record.rectification = { owner: item.owner, due: localDateTime(due), status: 'rectifying', photoName: '' };
+    }
+    if (item.status === 'rectified') {
+      const due = new Date(now - 2 * 3600000);
+      record.rectification = { owner: '食堂负责人', due: localDateTime(due), completedAt: localDateTime(new Date(now - 3600000)), status: 'rectified', photoName: '' };
+    }
+    record.id = `SAMPLE-${i + 1}`;
+    return record;
+  });
+  persistAlerts();
+}
+seedSamples();
+pendingAlerts = allAlerts.filter(a => a.status === 'pending');
+
+function refreshViews() {
+  persistAlerts();
+  renderAlertStream();
+  updateStats();
+  renderP4();
+  renderP5();
+  renderP2Result();
+}
+function addAlert(alert, notify = true) {
+  const now = Date.now();
+  const duplicate = allAlerts.find(a => a.source === alert.source && a.camera === alert.camera && a.canteen === alert.canteen && a.location === alert.location && a.violation === alert.violation && !['passed', 'rejected', 'rectified'].includes(a.status) && now - new Date(a.lastSeen.replace(' ', 'T')).getTime() <= 5 * 60000);
+  if (duplicate) {
+    duplicate.count = (duplicate.count || 1) + 1;
+    duplicate.lastSeen = alert.time;
+    duplicate.confidence = Math.max(duplicate.confidence, alert.confidence);
+    if (duplicate.status === 'unconfirmed' && duplicate.confidence >= config.threshold) duplicate.status = 'pending';
+    duplicate.rationale = alert.rationale;
+    if (alert.imageUrl) duplicate.imageUrl = alert.imageUrl;
+    if (notify) toast('5 分钟内同位置同类型告警已合并');
+    refreshViews();
+    return duplicate;
+  }
+  allAlerts.push(alert);
+  if (notify) pushNotification(alert);
+  drawAnnotationOnCurrent(alert);
+  refreshViews();
+  return alert;
+}
+
+function triggerNow() {
+  const camData = CAMS[currentCam];
+  const violations = Object.keys(camData.violations).filter(k => config.violations[k]?.enabled);
+  if (!violations.length) { toast('当前摄像头没有已启用的样例违规项'); return; }
+  const vi = violations[sampleSequence++ % violations.length];
+  const alert = makeAlert(vi, currentCam, { source: 'sample', canteen: ['一号食堂', '二号食堂', '三号食堂'][sampleSequence % 3] });
+  addAlert(alert);
+}
+
+function pushNotification(alert) {
+  const vi = VIOLATIONS[alert.violation];
+  const popup = document.createElement('div');
+  popup.className = 'alert-popup';
+  if (alert.status === 'unconfirmed') popup.classList.add('unconfirmed');
+  popup.innerHTML = `<div class="popup-header"><div class="popup-title">🚨 ${vi.name}</div><span class="popup-close" onclick="this.parentElement.parentElement.remove()">✕</span></div><div class="popup-body"><div style="margin-bottom:4px">📍 ${alert.location} · ${alert.time.slice(11)}</div><div>${alert.sample ? '示例数据' : '模型识别'} · 置信度 <b>${Math.round(alert.confidence * 100)}%</b> · ${alert.status === 'unconfirmed' ? '待确认' : '待复核'}</div></div>`;
+  popup.onclick = e => { if (!e.target.classList.contains('popup-close')) { goAlert(alert.id); popup.remove(); } };
+  document.body.appendChild(popup);
+  setTimeout(() => { popup.style.transition = 'opacity .5s'; popup.style.opacity = '0'; setTimeout(() => popup.remove(), 500); }, 6000);
+}
+
+function drawAnnotationOnCurrent(alert) {
+  if (alert.source === 'model') return;
+  const p1Active = document.getElementById('page-p1').classList.contains('active');
+  if (p1Active) {
+    currentCam = alert.camera;
+    document.getElementById('p1Img').src = CAMS[alert.camera].img;
+    document.getElementById('p1CamTitle').textContent = `${alert.camera}（${CAMS[alert.camera].label}）`;
+    document.getElementById('p1CamCode').textContent = alert.camera;
+    document.getElementById('p1ImageSource').textContent = CAMS[alert.camera].sourceLabel || '内置演示样例图';
+    const img = document.getElementById('p1Img');
+    img.onload = () => drawOnFrame(document.getElementById('p1Monitor'), 'p1Img', alert.camera, alert.violation, alert.box, alert.confidence);
+  }
+  if (document.getElementById('page-p2').classList.contains('active') && alert.camera === currentCam) {
+    const img = document.getElementById('p2Img');
+    img.onload = () => drawOnFrame(document.getElementById('p2Frame'), 'p2Img', alert.camera, alert.violation, alert.box, alert.confidence);
+  }
+}
+
+function drawOnFrame(frameEl, imgId, camKey, viCode, customBox = null, confidence = null, clear = true) {
+  const img = document.getElementById(imgId);
+  const viData = VIOLATIONS[viCode];
+  if (!frameEl || !img || !img.clientWidth || !img.naturalWidth || !viData) return;
+  if (clear) frameEl.querySelectorAll('.annotation-box').forEach(b => b.remove());
+  const loc = customBox === false ? null : customBox || CAMS[camKey]?.violations[viCode];
+  if (!loc) return;
+  const frameStyle = getComputedStyle(frameEl);
+  const borderLeft = parseFloat(frameStyle.borderLeftWidth) || 0;
+  const borderTop = parseFloat(frameStyle.borderTopWidth) || 0;
+  const fit = getComputedStyle(img).objectFit;
+  const scale = (fit === 'contain' ? Math.min : Math.max)(img.clientWidth / img.naturalWidth, img.clientHeight / img.naturalHeight);
+  const offsetX = img.offsetLeft + (img.clientWidth - img.naturalWidth * scale) / 2;
+  const offsetY = img.offsetTop + (img.clientHeight - img.naturalHeight * scale) / 2;
+  let x = loc.x, y = loc.y, w = loc.w, h = loc.h;
+  if (customBox && customBox.normalized) { x *= img.naturalWidth; y *= img.naturalHeight; w *= img.naturalWidth; h *= img.naturalHeight; }
+  const box = document.createElement('div');
+  box.className = 'annotation-box';
+  box.style.borderColor = viData.color;
+  box.style.left = `${offsetX + x * scale - borderLeft}px`;
+  box.style.top = `${offsetY + y * scale - borderTop}px`;
+  box.style.width = `${w * scale}px`;
+  box.style.height = `${h * scale}px`;
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.style.background = viData.color;
+  label.classList.add(offsetY + y * scale < 34 ? 'label-bottom' : 'label-top');
+  label.textContent = `${viData.name} · ${Math.round((confidence ?? viData.conf) * 100)}%`;
+  box.appendChild(label);
+  frameEl.appendChild(box);
+}
+
+function drawPreviewResults() {
+  const frame = document.getElementById('aiPreviewFrame');
+  const img = document.getElementById('aiPreviewImg');
+  if (!frame || !img || !img.clientWidth || !img.naturalWidth) return;
+  frame.querySelectorAll('.annotation-box').forEach(b => b.remove());
+  aiResults.forEach((record, index) => drawOnFrame(frame, 'aiPreviewImg', currentCam, record.violation, record.source === 'model' && !record.box ? false : record.box, record.confidence, index === 0));
+}
+function schedulePreviewAnnotations() {
+  const img = document.getElementById('aiPreviewImg');
+  if (img.complete && img.naturalWidth) drawPreviewResults();
+  else img.onload = drawPreviewResults;
+}
+
+// ========== 页面导航 ==========
+document.getElementById('navTabs').addEventListener('click', e => {
+  if (!e.target.classList.contains('tab')) return;
+  goPage(e.target.dataset.page);
+});
+
+function goPage(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.page === name));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  if (name === 'p1') {
+    const cam = CAMS[currentCam] ? currentCam : 'CAM-01';
+    document.getElementById('p1Img').src = CAMS[cam].img;
+    document.getElementById('p1CamTitle').textContent = `${cam}（${CAMS[cam].label}）`;
+    document.getElementById('p1CamCode').textContent = cam;
+    document.getElementById('p1ImageSource').textContent = CAMS[cam].sourceLabel || '内置演示样例图';
+    renderAlertStream(); updateStats(); startClock();
+  }
+  if (name === 'p2') {
+    document.getElementById('p2Img').src = CAMS[currentCam].img;
+    renderP2Result(); startClock();
+    setTimeout(() => drawCurrentCamAnnotation(), 120);
+  }
+  if (name === 'p4') renderP4();
+  if (name === 'p5') renderP5();
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+function getChart(id) {
+  if (typeof echarts === 'undefined') {
+    const fallback = document.getElementById(id);
+    if (fallback && !fallback.textContent.trim()) fallback.textContent = '图表组件未加载，列表数据仍可用';
+    return null;
+  }
+  const el = document.getElementById(id);
+  return echarts.getInstanceByDom(el) || echarts.init(el);
+}
+function switchRole(role) {
+  currentRole = role;
+  localStorage.setItem(STORE_ROLE, role);
+  renderP5();
+}
+function imageToDataUrl(file, maxEdge = 1280, quality = .78) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('无法读取图片文件'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('图片格式无法解析'));
+      image.onload = () => {
+        const ratio = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+async function handleImageUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('请选择图片文件'); return; }
+  try {
+    selectedImageUrl = await imageToDataUrl(file);
+    selectedImageFile = file;
+    selectedImageIsSample = false;
+    document.getElementById('aiPreviewImg').src = selectedImageUrl;
+    document.getElementById('aiPreviewImg').style.display = 'block';
+    document.getElementById('aiPreviewEmpty').style.display = 'none';
+    const badge = document.getElementById('aiSourceBadge');
+    badge.textContent = '本地上传'; badge.classList.remove('sample'); badge.style.display = 'inline-flex';
+    document.getElementById('recognizeBtn').disabled = false;
+    document.getElementById('sampleResultBtn').disabled = true;
+    document.getElementById('aiServiceStatus').textContent = `已载入：${file.name} · 图片已压缩至 1280px 内`;
+    aiResults = [];
+    document.getElementById('aiPreviewFrame').querySelectorAll('.annotation-box').forEach(box => box.remove());
+    renderP2Result();
+  } catch (error) {
+    toast(error.message || '图片载入失败');
+  }
+}
+function useSampleImage() {
+  const cam = CAMS[currentCam];
+  selectedImageUrl = cam.img;
+  selectedImageFile = null;
+  selectedImageIsSample = true;
+  document.getElementById('aiPreviewImg').src = cam.img;
+  document.getElementById('aiPreviewImg').style.display = 'block';
+  document.getElementById('aiPreviewEmpty').style.display = 'none';
+  const badge = document.getElementById('aiSourceBadge');
+  badge.textContent = `${cam.sourceLabel || '内置样例图'} · 示例数据`; badge.classList.add('sample'); badge.style.display = 'inline-flex';
+  document.getElementById('recognizeBtn').disabled = false;
+  document.getElementById('sampleResultBtn').disabled = false;
+  document.getElementById('aiServiceStatus').textContent = `已载入内置样例：${cam.label} · 示例结果需单独触发`;
+  aiResults = [];
+  document.getElementById('aiPreviewFrame').querySelectorAll('.annotation-box').forEach(box => box.remove());
+  renderP2Result();
+}
+async function recognizeUploaded() {
+  if (!selectedImageUrl) { toast('请先上传或选择画面'); return; }
+  if (!config.endpoint) {
+    document.getElementById('aiServiceStatus').textContent = '尚未配置模型服务；请在判定标准配置中填写服务端代理地址';
+    toast('请打开右上角【⚙判定标准配置】，填入云函数网关地址');
+    openConfig();
+    return;
+  }
+
+  const button = document.getElementById('recognizeBtn');
+  button.disabled = true; button.textContent = '识别中…';
+  document.getElementById('aiServiceStatus').textContent = '正在调用云函数AI识别服务…';
+
+  try {
+    // 截取base64，去掉dataURL前缀
+    const base64Str = selectedImageUrl.split(',')[1];
+
+ // 15 秒超时保护：断网或云函数卡住时不再无限转圈
+ const controller = new AbortController();
+ const timer = setTimeout(() => controller.abort(), 15000);
+ let response;
+ try {
+   response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      "imageBase64": base64Str
+    }),
+    signal: controller.signal
+   });
+ } finally {
+   clearTimeout(timer);
+ }
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+
+    if(payload.code !== 0){
+      throw new Error(payload.msg || payload.error || "AI识别调用失败");
+    }
+
+    // ========= 当前后端返回纯自然语言文本，没有结构化JSON =========
+    const aiTextResult = payload.result;
+    aiResults = [];
+    toast("AI识别完成：" + aiTextResult.substring(0,80)+"…");
+
+    // 模拟一条告警记录用于界面展示（临时，等后端改prompt输出JSON后删除）
+    const alert = makeAlert("V2", "UPLOAD", {
+      source:"model",
+      confidence:0.82,
+      rationale: aiTextResult,
+      canteen: document.getElementById('uploadCanteen').value,
+      imageUrl: selectedImageUrl,
+      imageFileName: selectedImageFile?.name || "上传图片"
+    });
+    aiResults.push(addAlert(alert));
+
+    schedulePreviewAnnotations();
+    renderP2Result();
+    document.getElementById('aiServiceStatus').textContent = "✅ AI识别完成，已生成告警记录";
+
+  } catch (error) {
+    // 断网 / 云函数不可用 / 超时：降级为明确标注的示例结果，保证演示流程不中断
+    fallbackToSampleResult(error);
+  } finally {
+    button.disabled = false;
+    button.textContent = '开始识别';
+  }
+}
+function fallbackToSampleResult(error) {
+  const reason = error?.name === 'AbortError' ? '请求超时 15 秒' : (error?.message || '服务未响应');
+  const cam = selectedImageIsSample ? currentCam : 'UPLOAD';
+  const list = Object.keys(CAMS[cam]?.violations || {}).filter(k => config.violations[k]?.enabled);
+  const vi = list.length ? list[sampleSequence++ % list.length] : 'V2';
+  const alert = makeAlert(vi, cam, {
+    source: 'sample',
+    imageUrl: selectedImageUrl,
+    canteen: document.getElementById('uploadCanteen').value,
+    box: CAMS[cam]?.violations[vi] || null,
+    rationale: `模型服务不可用（${reason}），已自动降级为示例结果；本条不代表模型识别结论。`,
+  });
+  aiResults = [addAlert(alert)];
+  schedulePreviewAnnotations();
+  renderP2Result();
+  const msg = `模型服务未响应（${reason}），已降级为示例数据`;
+  document.getElementById('aiServiceStatus').textContent = '⚠️ ' + msg;
+  toast(msg);
+}
+
+function createSampleResult() {
+  if (!selectedImageIsSample || !selectedImageUrl) { toast('请先选择内置样例图'); return; }
+  const available = Object.keys(CAMS[currentCam].violations).filter(k => config.violations[k]?.enabled);
+  if (!available.length) { toast('当前摄像头没有已启用的样例项'); return; }
+  const vi = available[sampleSequence++ % available.length];
+  const canteen = document.getElementById('uploadCanteen').value;
+  const alert = makeAlert(vi, currentCam, {
+    source: 'sample', imageUrl: selectedImageUrl, canteen,
+    box: CAMS[currentCam].violations[vi],
+    rationale: `内置演示样例为「${VIOLATIONS[vi].name}」配置了示意标注框；该依据不是模型推理结果。`,
+  });
+  aiResults = [addAlert(alert)];
+  schedulePreviewAnnotations();
+  renderP2Result();
+  document.getElementById('aiServiceStatus').textContent = '已生成一条示例数据，未调用模型';
+}
+
+function renderConfig() {
+  document.getElementById('modelEndpoint').value = config.endpoint;
+  document.getElementById('thresholdInput').value = Math.round(config.threshold * 100);
+  updateThresholdLabel(Math.round(config.threshold * 100));
+  document.getElementById('violationConfigList').innerHTML = Object.entries(VIOLATIONS).map(([key, vi]) => {
+    const item = config.violations[key] || { enabled: true, standard: vi.standard };
+    return `<div class="vi-config-item"><div class="vi-config-head"><input id="enabled-${key}" type="checkbox" ${item.enabled ? 'checked' : ''}><strong style="color:${vi.color}">${key} · ${escapeHtml(vi.name)}</strong></div><textarea id="standard-${key}" aria-label="${escapeHtml(key)} 判定说明">${escapeHtml(item.standard)}</textarea></div>`;
+  }).join('');
+}
+function openConfig() { renderConfig(); document.getElementById('configBackdrop').classList.add('open'); }
+function closeConfig() { document.getElementById('configBackdrop').classList.remove('open'); }
+function updateThresholdLabel(value) {
+  const label = `${value}%`;
+  document.getElementById('thresholdValue').textContent = label;
+  document.getElementById('thresholdInline').textContent = label;
+}
+function saveConfig() {
+  config.threshold = Number(document.getElementById('thresholdInput').value) / 100;
+  config.endpoint = document.getElementById('modelEndpoint').value.trim();
+  Object.keys(VIOLATIONS).forEach(key => {
+    config.violations[key] = {
+      enabled: document.getElementById(`enabled-${key}`).checked,
+      standard: document.getElementById(`standard-${key}`).value.trim() || VIOLATIONS[key].standard,
+    };
+  });
+  allAlerts.forEach(alert => {
+    if (alert.source === 'model' && ['pending', 'unconfirmed'].includes(alert.status)) {
+      alert.status = alert.confidence < config.threshold ? 'unconfirmed' : 'pending';
+    }
+  });
+  persistConfig(); closeConfig(); renderAlertStream(); renderP2Result(); toast('判定标准与阈值已保存在本机');
+}
+function resetConfig() { config = defaultConfig(); persistConfig(); renderConfig(); toast('已恢复默认阈值和判定标准'); }
+
+// 实时时钟
+let clockTimer = null;
+function startClock() {
+  if (clockTimer) return;
+  clockTimer = setInterval(() => {
+    const t = new Date();
+    const s = t.toTimeString().slice(0, 8);
+    document.getElementById('p1Time') && (document.getElementById('p1Time').textContent = s);
+    document.getElementById('p2Time') && (document.getElementById('p2Time').textContent = s);
+  }, 1000);
+}
+
+// ========== Toast ==========
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function drawCurrentCamAnnotation() {
+  const latest = [...allAlerts].reverse().find(a => a.camera === currentCam && ['pending', 'unconfirmed', 'rectifying'].includes(a.status));
+  if (latest) drawOnFrame(document.getElementById('p2Frame'), 'p2Img', currentCam, latest.violation, latest.box, latest.confidence);
+}
+
+// ========== P1 渲染 ==========
+function renderAlertStream() {
+  const stream = document.getElementById('alertStream');
+  const sorted = [...allAlerts].sort((a, b) => b.time.localeCompare(a.time));
+  const recent = sorted.slice(0, 12);
+  const unconfirmedCount = allAlerts.filter(a => a.status === 'unconfirmed').length;
+  document.getElementById('unreadCount').textContent = `待复核 ${pendingAlerts.length} · 待确认 ${unconfirmedCount}`;
+
+  if (recent.length === 0) {
+    stream.innerHTML = `<div class="empty-state">暂无告警，AI 监控运行中...</div>`;
+    return;
+  }
+
+  stream.innerHTML = recent.map(a => {
+    const vi = VIOLATIONS[a.violation];
+    const statusMap = { pending: '待复核', unconfirmed: '待确认', passed: '已通过', rejected: '已驳回', rectifying: '整改中', rectified: '已整改' };
+    const isNew = pendingAlerts.includes(a);
+    return `<div class="alert-item ${isNew ? 'new' : ''} ${a.status === 'unconfirmed' ? 'unconfirmed' : ''}" onclick="goAlert('${a.id}')">
+      <div class="violation-dot" style="background:${vi.color}"></div>
+      <div class="content">
+        <div class="title" style="color:${vi.color}">${vi.name}</div>
+        <div class="meta">${a.time} · ${CAMS[a.camera]?.label || a.location} · ${a.sample ? '示例数据' : '模型识别'}</div>
+      </div>
+      <span class="status status-${a.status}">${statusMap[a.status] || a.status}</span>
+    </div>`;
+  }).join('');
+}
+
+function updateStats() {
+  const today = localDateTime().slice(0, 10);
+  const todays = allAlerts.filter(a => a.time.slice(0, 10) === today);
+  const formal = todays.filter(a => !['unconfirmed', 'rejected'].includes(a.status));
+  const pending = formal.filter(a => ['pending', 'rectifying'].includes(a.status)).reduce((sum, a) => sum + (a.count || 1), 0);
+  const done = formal.filter(a => ['passed', 'rectified'].includes(a.status)).reduce((sum, a) => sum + (a.count || 1), 0);
+  const total = formal.reduce((sum, a) => sum + (a.count || 1), 0);
+  document.getElementById('p1Total').textContent = total;
+  document.getElementById('p1Pending').textContent = pending;
+  document.getElementById('p1Done').textContent = done;
+  document.getElementById('bellBadge').textContent = pending + todays.filter(a => a.status === 'unconfirmed').length;
+
+  // 评分：100 - (未处理*3 + 高等级未处理*2)
+  const highPending = formal.filter(a => ['pending', 'rectifying'].includes(a.status) && VIOLATIONS[a.violation].level === '高').reduce((sum, a) => sum + (a.count || 1), 0);
+  const score = Math.max(60, Math.round((100 - pending * 3 - highPending * 2) * 10) / 10);
+  document.getElementById('p1Score').textContent = score;
+  const rejected = todays.filter(a => a.status === 'rejected').reduce((sum, a) => sum + (a.count || 1), 0);
+  const reviewed = todays.filter(a => ['passed', 'rejected', 'rectifying', 'rectified'].includes(a.status)).reduce((sum, a) => sum + (a.count || 1), 0);
+  document.getElementById('p1FalseAlarm').textContent = reviewed ? Math.round(rejected / reviewed * 100) + '%' : '0%';
+
+  // 饼图
+  const chart = getChart('p1Pie');
+  if (!chart) return;
+  const pieData = {};
+  Object.keys(VIOLATIONS).forEach(k => pieData[k] = 0);
+  formal.forEach(r => { pieData[r.violation] = (pieData[r.violation] || 0) + (r.count || 1); });
+  const hasData = Object.values(pieData).some(v => v > 0);
+  chart.setOption({
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 11 } },
+    series: hasData ? [{
+      type: 'pie', radius: ['40%', '65%'], center: ['50%', '40%'],
+      data: Object.keys(VIOLATIONS).map(k => ({
+        name: VIOLATIONS[k].name, value: pieData[k], itemStyle: { color: VIOLATIONS[k].color }
+      })),
+      label: { color: '#cbd5e1' },
+    }] : [{
+      type: 'pie', radius: '60%', center: ['50%', '40%'],
+      data: [{ name: '暂无数据', value: 1, itemStyle: { color: '#475569' } }],
+      label: { color: '#64748b' },
+    }]
+  });
+}
+
+// ========== P2 摄像头切换 ==========
+function switchCam(btn, cam) {
+  document.querySelectorAll('.cam-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentCam = cam;
+  const camData = CAMS[cam];
+  document.getElementById('p2CamLabel').textContent = cam;
+  document.getElementById('p2Img').src = camData.img;
+  useSampleImage();
+  setTimeout(() => drawCurrentCamAnnotation(), 100);
+}
+
+function renderP2Result() {
+  // 过滤掉已删除坐标的示例告警（避免画面无框但结果区仍显示的"幽灵条目"）
+  const recent = [...allAlerts].filter(a => a.camera === currentCam && (a.source !== 'sample' || CAMS[a.camera]?.violations[a.violation])).slice(-5);
+  const area = document.getElementById('p2DetectResult');
+  const violList = document.getElementById('p2ViolList');
+  const tagsEl = document.getElementById('p2ViolTags');
+
+  if (recent.length === 0 && aiResults.length === 0) {
+    area.innerHTML = `<div style="font-size:14px;color:#64748b;padding:30px 0;text-align:center">上传画面后开始识别；样例结果会明确标注为示例数据</div>`;
+    violList.style.display = 'none';
+    return;
+  }
+
+  const combined = aiResults.length ? aiResults : recent;
+  area.innerHTML = `<div style="font-size:14px;color:#f1f5f9">当前画面识别到 <b style="color:#f87171">${combined.length}</b> 条结果 <span class="source-badge ${combined.every(a => a.sample) ? 'sample' : ''}" style="margin-left:6px">${combined.every(a => a.sample) ? '示例数据' : '模型识别'}</span></div><div class="ai-result-list">${combined.map(a => { const vi = VIOLATIONS[a.violation]; return `<div class="ai-result-item"><div class="result-head"><strong style="color:${vi.color}">${vi.name}</strong><span class="status-tag status-${a.status}">${a.status === 'unconfirmed' ? '待确认' : a.status === 'pending' ? '待复核' : a.status === 'passed' ? '已通过' : a.status === 'rejected' ? '已驳回' : a.status}</span></div><div class="result-meta">置信度 ${Math.round(a.confidence * 100)}% · ${escapeHtml(a.rationale)}<br>${a.sample ? '示例数据，不计为真实模型结论' : '来自已配置的模型服务'} · <a href="javascript:goAlert(\'${a.id}\')" style="color:#60a5fa">查看详情</a></div></div>`; }).join('')}</div>`;
+
+  // 统计违规类型
+  const counts = {};
+  combined.forEach(a => { counts[a.violation] = (counts[a.violation] || 0) + 1; });
+  violList.style.display = 'block';
+  tagsEl.innerHTML = Object.keys(counts).map(k => {
+    const vi = VIOLATIONS[k];
+    return `<span class="viol-tag" style="background:${vi.color}30;color:${vi.color}">${vi.name} × ${counts[k]}</span>`;
+  }).join('');
+}
+
+// ========== P3 告警处理 ==========
+function goAlert(id) {
+  const rec = allAlerts.find(r => r.id === id) || pendingAlerts.find(r => r.id === id);
+  if (!rec) return;
+  currentAlert = rec;
+  const vi = VIOLATIONS[rec.violation];
+
+  document.getElementById('p3Subtitle').textContent = ` · ${rec.time} · ${rec.camera}`;
+  document.getElementById('p3Id').textContent = rec.id;
+  document.getElementById('p3Time').textContent = rec.time;
+  document.getElementById('p3Cam').textContent = rec.camera === 'UPLOAD' ? '本地上传图片' : rec.camera;
+  document.getElementById('p3Location').textContent = rec.location;
+  document.getElementById('p3Type').textContent = `${vi.name} (${rec.violation})`;
+  document.getElementById('p3Type').style.color = vi.color;
+  document.getElementById('p3Conf').textContent = Math.round(rec.confidence * 100) + '%';
+  const sourceLabel = rec.sample ? `${CAMS[rec.camera]?.sourceLabel || '内置样例图'} · 示例数据` : `模型识别${rec.imageSource === 'sample_image' ? ` · ${CAMS[rec.camera]?.sourceLabel || '内置样例图'}` : ''}`;
+  document.getElementById('p3Source').innerHTML = `<span class="source-badge ${rec.sample ? 'sample' : ''}">${escapeHtml(sourceLabel)}</span>`;
+  document.getElementById('p3Rationale').textContent = rec.rationale || '未提供判定依据';
+  document.getElementById('p3Prompt').textContent = rec.prompt || promptFor(rec.violation);
+  document.getElementById('p3Remark').value = rec.remark || '';
+
+  // 等级标签
+  const levelTag = document.getElementById('p3Level');
+  levelTag.textContent = vi.level;
+  levelTag.className = 'status-tag ' + (vi.level === '高' ? 'tag-high' : vi.level === '中' ? 'tag-mid' : 'tag-low');
+
+  // 状态
+  const statusTag = document.getElementById('p3Status');
+  statusTag.textContent = { pending: '待复核', unconfirmed: '待确认', passed: '已复核通过', rejected: '已驳回（误报）', rectifying: '整改中', rectified: '已整改' }[rec.status] || rec.status;
+  statusTag.className = 'status-tag status-' + rec.status;
+  const canReview = ['pending', 'unconfirmed'].includes(rec.status);
+  document.getElementById('p3Actions').style.display = canReview ? '' : 'none';
+  document.getElementById('p3ActionsHint').style.display = canReview ? 'none' : 'block';
+
+  // 画面上画框（按告警所属摄像头加载对应图片）
+  const shot = document.getElementById('p3Shot');
+  const p3Img = document.getElementById('p3Img');
+  const placeholder = document.getElementById('p3ImagePlaceholder');
+  const detailImage = rec.imageUrl || (rec.imageSource === 'sample_image' ? CAMS[rec.camera]?.img : '') || '';
+  if (detailImage) p3Img.src = detailImage;
+  else p3Img.removeAttribute('src');
+  p3Img.style.display = detailImage ? 'block' : 'none';
+  placeholder.style.display = detailImage ? 'none' : 'block';
+  placeholder.textContent = !detailImage && rec.source === 'model' ? '上传图像不会保存在本机；复核时请重新上传授权图片。' : '当前记录未关联可展示的图片';
+  shot.querySelectorAll('.annotation-box').forEach(b => b.remove());
+  const detailBox = rec.source === 'model' && !rec.box ? false : rec.box;
+  p3Img.onload = () => drawOnFrame(shot, 'p3Img', rec.camera, rec.violation, detailBox, rec.confidence);
+  if (p3Img.complete) setTimeout(() => drawOnFrame(shot, 'p3Img', rec.camera, rec.violation, detailBox, rec.confidence), 100);
+
+  const rectPanel = document.getElementById('rectificationPanel');
+  if (rec.rectification) {
+    rectPanel.style.display = 'block';
+    const overdue = rec.rectification.status === 'rectifying' && new Date(rec.rectification.due.replace(' ', 'T')) < new Date();
+    document.getElementById('rectificationInfo').innerHTML = `责任人：<b>${escapeHtml(rec.rectification.owner)}</b><br>完成时限：<b style="color:${overdue ? '#f87171' : '#cbd5e1'}">${escapeHtml(rec.rectification.due)}${overdue ? ' · 已超期' : ''}</b><br>状态：${rec.rectification.status === 'rectified' ? '已完成' : '整改中'}`;
+    document.getElementById('rectificationPhotoName').textContent = rec.rectification.photoName ? `已上传：${rec.rectification.photoName}` : '尚未上传整改照片';
+    const photoPreview = document.getElementById('rectificationPhotoPreview');
+    photoPreview.src = rec.rectification.photoData || '';
+    photoPreview.style.display = rec.rectification.photoData ? 'block' : 'none';
+  } else {
+    rectPanel.style.display = 'none';
+    document.getElementById('rectificationPhotoName').textContent = '';
+    document.getElementById('rectificationPhotoPreview').style.display = 'none';
+    document.getElementById('rectificationPhotoPreview').removeAttribute('src');
+  }
+
+  goPage('p3');
+  // 从 pending 队列移除
+  pendingAlerts = allAlerts.filter(a => a.status === 'pending');
+}
+
+function reviewPass() {
+  if (!currentAlert) { toast('请先在「巡检面板」或「巡检台账」中选择一条告警记录'); return; }
+  if (!['pending', 'unconfirmed'].includes(currentAlert.status)) { toast('当前状态不支持复核'); return; }
+  currentAlert.reviewer = currentRole === 'manager' ? '集团管理者' : '检查员';
+  currentAlert.remark = document.getElementById('p3Remark').value;
+  if (currentAlert.status === 'rectifying' || currentAlert.status === 'rectified') { toast('该告警已进入整改流程'); return; }
+  const due = new Date(Date.now() + 24 * 60 * 60000);
+  const localValue = new Date(due.getTime() - due.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  document.getElementById('rectificationDue').value = localValue;
+  document.getElementById('rectificationModal').classList.add('open');
+}
+
+function reviewReject() {
+  if (!currentAlert) { toast('请先在「巡检面板」或「巡检台账」中选择一条告警记录'); return; }
+  if (!['pending', 'unconfirmed'].includes(currentAlert.status)) { toast('当前状态不支持驳回'); return; }
+  currentAlert.status = 'rejected';
+  currentAlert.reviewer = currentRole === 'manager' ? '集团管理者' : '检查员';
+  currentAlert.remark = document.getElementById('p3Remark').value + '（误报）';
+  persistAlerts();
+  highlightId = currentAlert.id;
+  currentAlert = null;
+  toast('❌ 已驳回 — 标记为误报');
+  goPage('p4');
+}
+
+function closeRectificationModal() { document.getElementById('rectificationModal').classList.remove('open'); }
+function assignRectification() {
+  if (!currentAlert) return;
+  const due = document.getElementById('rectificationDue').value;
+  if (!due) { toast('请设置整改期限'); return; }
+  currentAlert.status = 'rectifying';
+  currentAlert.reviewer = currentRole === 'manager' ? '集团管理者' : '检查员';
+  currentAlert.remark = document.getElementById('p3Remark').value;
+  currentAlert.rectification = { owner: document.getElementById('rectificationAssignee').value, due: due.replace('T', ' '), status: 'rectifying', photoName: '' };
+  highlightId = currentAlert.id;
+  closeRectificationModal(); persistAlerts();
+  toast('✅ 已指派整改 — 记录保持整改中');
+  goPage('p4');
+}
+async function handleRectificationPhoto(event) {
+  if (!currentAlert?.rectification || !event.target.files?.[0]) return;
+  try {
+    const file = event.target.files[0];
+    currentAlert.rectification.photoName = file.name;
+    currentAlert.rectification.photoData = await imageToDataUrl(file, 800, .68);
+    document.getElementById('rectificationPhotoName').textContent = `已选择：${file.name} · 已压缩并暂存本机`;
+    const preview = document.getElementById('rectificationPhotoPreview');
+    preview.src = currentAlert.rectification.photoData; preview.style.display = 'block';
+    persistAlerts();
+  } catch (error) { toast(error.message || '整改照片读取失败'); }
+}
+function completeRectification() {
+  if (!currentAlert?.rectification) return;
+  currentAlert.rectification.status = 'rectified';
+  currentAlert.status = 'rectified';
+  currentAlert.rectification.completedAt = localDateTime();
+  persistAlerts();
+  toast('✅ 整改已完成，记录已闭环');
+  goPage('p4');
+}
+
+// ========== P4 台账 ==========
+function renderP4() {
+  const typeFilter = document.getElementById('p4FilterType')?.value || '';
+  const dateFilter = document.getElementById('p4FilterDate')?.value || 'all';
+  const tbody = document.getElementById('p4Body');
+  let rows = [...allAlerts].sort((a, b) => b.time.localeCompare(a.time));
+  if (typeFilter) rows = rows.filter(r => r.violation === typeFilter);
+  if (dateFilter === 'today') rows = rows.filter(r => r.time.slice(0, 10) === localDateTime().slice(0, 10));
+  if (dateFilter === '7') rows = rows.filter(r => {
+    const age = Date.now() - new Date(r.time.replace(' ', 'T')).getTime();
+    return age >= 0 && age <= 7 * 86400000;
+  });
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-state">没有符合当前筛选条件的记录</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((r, idx) => {
+    const vi = VIOLATIONS[r.violation];
+    const statusMap = { pending: '待复核', unconfirmed: '待确认', passed: '已通过', rejected: '已驳回', rectifying: '整改中', rectified: '已整改' };
+    const cls = highlightId === r.id ? 'highlight' : '';
+    const overdue = r.rectification?.status === 'rectifying' && new Date(r.rectification.due.replace(' ', 'T')) < new Date();
+    const remediation = !r.rectification ? '—' : r.rectification.status === 'rectified' ? '已完成' : overdue ? '已超期' : '整改中';
+    return `<tr class="${cls} ${overdue ? 'overdue' : ''}">
+      <td>${idx + 1}</td>
+      <td>${escapeHtml(r.time)}</td>
+      <td>${escapeHtml(r.location || `${r.canteen} · ${CAMS[r.camera]?.label || r.camera}`)}</td>
+      <td style="color:${vi.color};font-weight:600">${escapeHtml(vi.name)}${r.count > 1 ? ` ×${r.count}` : ''}<br><span class="source-badge ${r.sample ? 'sample' : ''}">${r.sample ? `${escapeHtml(CAMS[r.camera]?.sourceLabel || '内置样例图')} · 示例数据` : `模型识别${r.imageSource === 'sample_image' ? ' · AI生成示意图' : ''}`}</span>${r.status === 'rejected' ? '<br><span class="status-tag status-rejected">误报审计，不计正式台账</span>' : ''}</td>
+      <td>${Math.round(r.confidence * 100)}%</td>
+      <td>${escapeHtml(r.reviewer || '—')}</td>
+      <td>${r.rectification ? escapeHtml(r.rectification.due) : '—'}</td>
+      <td><span class="status-tag ${overdue ? 'status-overdue' : r.rectification ? `status-${r.rectification.status}` : ''}">${remediation}</span></td>
+      <td><span class="status-tag status-${r.status}">${statusMap[r.status] || r.status}</span></td>
+      <td><a href="javascript:goAlert('${r.id}')" style="color:#60a5fa">查看</a></td>
+    </tr>`;
+  }).join('');
+}
+
+// ========== P5 历史 ==========
+function renderP5() {
+  const chart = getChart('p5Chart');
+  const days = Number(document.getElementById('p5FilterDays')?.value || 7);
+  const canteen = document.getElementById('p5FilterCanteen')?.value || 'all';
+  const since = Date.now() - days * 86400000;
+  const selected = allAlerts.filter(a => new Date(a.time.replace(' ', 'T')).getTime() >= since && (canteen === 'all' || a.canteen === canteen));
+  const manager = currentRole === 'manager';
+  document.getElementById('p5RoleLabel').textContent = manager ? '集团管理者 · 多食堂对比' : '检查员 · 巡检趋势';
+  document.getElementById('p5MetricNote').textContent = manager
+    ? '各食堂评分由当前示例记录估算，不代表真实经营排名。'
+    : '评分按当前处置状态估算，仅用于原型演示。';
+  if (manager && chart) {
+    const canteens = ['一号食堂', '二号食堂', '三号食堂'];
+    const scores = canteens.map(c => {
+      const unresolved = selected.filter(a => a.canteen === c && ['pending', 'rectifying'].includes(a.status));
+      const openCount = unresolved.reduce((sum, a) => sum + (a.count || 1), 0);
+      const high = unresolved.filter(a => VIOLATIONS[a.violation].level === '高').reduce((sum, a) => sum + (a.count || 1), 0);
+      return Math.max(60, 100 - openCount * 3 - high * 2);
+    });
+    chart.setOption({
+      tooltip: { trigger: 'axis', formatter: items => `${items[0].name}<br>演示评分：${items[0].value} 分` },
+      grid: { left: 72, right: 36, top: 18, bottom: 24 },
+      xAxis: { type: 'value', min: 60, max: 100, axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#334155' } } },
+      yAxis: { type: 'category', data: canteens, axisLabel: { color: '#cbd5e1' }, axisLine: { lineStyle: { color: '#475569' } } },
+      series: [{ name: '示例评分', type: 'bar', barMaxWidth: 24, label: { show: true, position: 'right', color: '#e2e8f0', formatter: '{c} 分' }, itemStyle: { color: '#10b981' }, data: scores }],
+    }, true);
+  } else if (chart) {
+    const dates = [...new Set(selected.map(a => a.time.slice(0, 10)))].sort();
+    const scores = dates.map(day => {
+      const unresolved = selected.filter(a => a.time.startsWith(day) && ['pending', 'rectifying'].includes(a.status));
+      const openCount = unresolved.reduce((sum, a) => sum + (a.count || 1), 0);
+      const high = unresolved.filter(a => VIOLATIONS[a.violation].level === '高').reduce((sum, a) => sum + (a.count || 1), 0);
+      return Math.max(60, 100 - openCount * 3 - high * 2);
+    });
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      grid: { left: 45, right: 24, top: 20, bottom: 34 },
+      xAxis: { type: 'category', data: dates.length ? dates : ['暂无记录'], axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' } },
+      yAxis: { type: 'value', min: 60, max: 100, axisLine: { lineStyle: { color: '#475569' } }, axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#334155' } } },
+      series: [{ data: scores.length ? scores : [null], type: 'line', smooth: true, symbolSize: 9, lineStyle: { width: 3, color: '#3b82f6' }, itemStyle: { color: '#3b82f6' }, areaStyle: { color: 'rgba(59,130,246,.1)' } }],
+    }, true);
+  }
+
+  const groups = selected.reduce((acc, a) => ((acc[a.time.slice(0, 10)] ||= []).push(a), acc), {});
+  const list = document.getElementById('p5HistoryList');
+  const orderedDays = Object.keys(groups).sort().reverse();
+  list.innerHTML = orderedDays.length ? orderedDays.map((date, i) => {
+    const records = groups[date];
+    const total = records.reduce((sum, a) => sum + (a.count || 1), 0);
+    const done = records.filter(a => !['pending', 'unconfirmed', 'rectifying'].includes(a.status)).reduce((sum, a) => sum + (a.count || 1), 0);
+    const rate = total ? Math.round(done / total * 100) + '%' : '—';
+    const typeCounts = Object.fromEntries(Object.keys(VIOLATIONS).map(k => [k, records.filter(a => a.violation === k).reduce((sum, a) => sum + (a.count || 1), 0)]));
+    return `<div class="history-day ${i === 0 ? 'open' : ''}"><div class="history-day-header" onclick="this.parentElement.classList.toggle('open')"><span>${date} · 事件记录 ${total} 起 · 处置完成率 ${rate} · ${records.some(a => a.sample) ? '含示例数据' : '模型记录'}</span><span>▼ 展开</span></div><div class="history-day-body"><div style="margin-bottom:8px">食堂：${[...new Set(records.map(a => a.canteen))].join('、')} · 整改中 ${records.filter(a => a.status === 'rectifying').reduce((sum, a) => sum + (a.count || 1), 0)} 起 · 已完成 ${records.filter(a => a.status === 'rectified').reduce((sum, a) => sum + (a.count || 1), 0)} 起</div><div>违规类型分布：${Object.entries(typeCounts).filter(([, n]) => n).map(([k, n]) => `<span class="viol-tag" style="background:${VIOLATIONS[k].color}30;color:${VIOLATIONS[k].color}">${VIOLATIONS[k].name} × ${n}</span>`).join(' ') || '暂无'}</div></div></div>`;
+  }).join('') : `<div class="empty-state" style="padding:24px">当前时间范围内没有记录。</div>`;
+}
+
+// ========== 导出 CSV ==========
+function exportCSV() {
+  const rows = [['序号', '时间', '食堂', '摄像头', '位置', '违规类型', '置信度', '复核人', '整改期限', '整改状态', '状态', '统计口径', '数据来源', '判定依据']];
+  [...allAlerts].sort((a, b) => b.time.localeCompare(a.time)).forEach((r, i) => {
+    const vi = VIOLATIONS[r.violation];
+    rows.push([i + 1, r.time, r.canteen || '', r.camera, r.location, vi.name, Math.round(r.confidence * 100) + '%', r.reviewer || '', r.rectification?.due || '', r.rectification?.status === 'rectified' ? '已完成' : r.rectification ? '整改中' : '',
+      r.status === 'passed' ? '已通过' : r.status === 'rejected' ? '已驳回' : r.status === 'unconfirmed' ? '待确认' : r.status === 'rectifying' ? '整改中' : r.status === 'rectified' ? '已整改' : '待复核', ['rejected', 'unconfirmed'].includes(r.status) ? '审计记录，不计正式统计' : '正式统计口径', r.sample ? '示例数据' : '模型识别', r.rationale || '']);
+  });
+  const csv = rows.map(row => row.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = '巡检台账.csv'; a.click();
+  toast('📥 CSV 已下载');
+}
+
+// ========== M 键标定模式 ==========
+let calibrationMode = false;
+let calDrag = null;
+const calHint = document.createElement('div');
+calHint.className = 'calibration-hint';
+calHint.textContent = '🟠 标定模式 · M 关闭 · 拖拽框选';
+
+document.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() !== 'm') return;
+  calibrationMode = !calibrationMode;
+  document.body.classList.toggle('calibration-mode', calibrationMode);
+  if (calibrationMode) { document.body.appendChild(calHint); toast('标定模式已开启 — 框选后复制坐标'); }
+  else { calHint.remove(); document.querySelectorAll('.calibration-rect').forEach(r => r.remove()); toast('标定模式已关闭'); }
+});
+
+// frameId/imgId 不变，但标定需要动态知道当前画面用哪个摄像头
+// camKeyResolver 是一个函数，返回当前画面的摄像头 key
+function setupCalibrationListener(frameId, imgId, camKeyResolver) {
+  const frame = document.getElementById(frameId);
+  if (!frame) return;
+  frame.addEventListener('mousedown', e => {
+    if (!calibrationMode) return;
+    const img = document.getElementById(imgId);
+    const camKey = camKeyResolver();
+    const camData = CAMS[camKey];
+    if (!camData) return;
+    const frameRect = frame.getBoundingClientRect();
+    const imgRect = img.getBoundingClientRect();
+    if (e.clientX < imgRect.left || e.clientX > imgRect.right || e.clientY < imgRect.top || e.clientY > imgRect.bottom) return;
+
+    const startX = e.clientX - frameRect.left;
+    const startY = e.clientY - frameRect.top;
+    const el = document.createElement('div');
+    el.className = 'calibration-rect';
+    el.style.left = startX + 'px'; el.style.top = startY + 'px'; el.style.width = '0px'; el.style.height = '0px';
+    frame.appendChild(el);
+    calDrag = { startX, startY, rectEl: el, frameRect, imgRect, img, camData };
+
+    const finish = () => {
+      if (!calDrag) return;
+      const el = calDrag.rectEl, img = calDrag.img, frameRect = calDrag.frameRect, imgRect = calDrag.imgRect;
+      const camData = calDrag.camData;
+      const boxLeft = parseFloat(el.style.left), boxTop = parseFloat(el.style.top);
+      const boxW = parseFloat(el.style.width), boxH = parseFloat(el.style.height);
+      el.remove(); calDrag = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', finish);
+      if (boxW < 5 || boxH < 5) return;
+
+      const scale = Math.max(img.clientWidth / camData.img_w, img.clientHeight / camData.img_h);
+      const offLeft = imgRect.left - frameRect.left + (img.clientWidth - camData.img_w * scale) / 2;
+      const offTop = imgRect.top - frameRect.top + (img.clientHeight - camData.img_h * scale) / 2;
+      const imgX = (boxLeft - offLeft) / scale, imgY = (boxTop - offTop) / scale;
+      const imgW = boxW / scale, imgH = boxH / scale;
+      const coord = { x: Math.round(imgX), y: Math.round(imgY), w: Math.round(imgW), h: Math.round(imgH) };
+      const pct = { x: (imgX/camData.img_w*100).toFixed(1), y: (imgY/camData.img_h*100).toFixed(1), w: (imgW/camData.img_w*100).toFixed(1), h: (imgH/camData.img_h*100).toFixed(1) };
+      const output = `\n==== 标定结果 [${camKeyResolver()}] ====\n原图像素 (${camData.img_w}×${camData.img_h}): ${JSON.stringify(coord)}\n百分比: ${JSON.stringify(pct)}\nCAM-${camKeyResolver().replace('CAM-','')}.violations.V?.{ x: ${coord.x}, y: ${coord.y}, w: ${coord.w}, h: ${coord.h} }\n================================`;
+      console.log(output);
+      const clip = `{ x: ${coord.x}, y: ${coord.y}, w: ${coord.w}, h: ${coord.h} }`;
+      navigator.clipboard?.writeText(clip).then(() => toast('✅ 坐标已复制，粘贴到 CAMS.' + camKeyResolver() + '.violations.V?.locations'), () => toast('坐标已输出到控制台'));
+    };
+    const onMove = e => {
+      if (!calDrag) return;
+      const cx = e.clientX - calDrag.frameRect.left, cy = e.clientY - calDrag.frameRect.top;
+      const x = Math.min(calDrag.startX, cx), y = Math.min(calDrag.startY, cy);
+      calDrag.rectEl.style.left = x + 'px'; calDrag.rectEl.style.top = y + 'px';
+      calDrag.rectEl.style.width = Math.abs(cx - calDrag.startX) + 'px'; calDrag.rectEl.style.height = Math.abs(cy - calDrag.startY) + 'px';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', finish);
+  });
+}
+
+// ========== 初始化 ==========
+setupCalibrationListener('p1Monitor', 'p1Img', () => currentCam);
+setupCalibrationListener('p2Frame', 'p2Img', () => currentCam);
+setupCalibrationListener('p3Shot', 'p3Img', () => currentAlert?.camera || currentCam);
+
+// 预加载所有摄像头图片
+Object.values(CAMS).forEach(c => { const img = new Image(); img.src = c.img; });
+// 设置初始图片
+document.getElementById('roleSelect').value = currentRole;
+document.getElementById('p1Img').src = CAMS[currentCam].img;
+document.getElementById('p2Img').src = CAMS[currentCam].img;
+document.getElementById('p1CamTitle').textContent = `${currentCam}（${CAMS[currentCam].label}）`;
+document.getElementById('p1CamCode').textContent = currentCam;
+document.getElementById('p1ImageSource').textContent = CAMS[currentCam].sourceLabel || '内置演示样例图';
+
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', event => { event.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', event => {
+  event.preventDefault(); uploadZone.classList.remove('dragover');
+  const file = event.dataTransfer.files?.[0];
+  if (file) handleImageUpload({ target: { files: [file] } });
+});
+
+renderAlertStream();
+updateStats();
+renderP4();
+renderP5();
+startClock();
+
+window.addEventListener('resize', () => {
+  if (typeof echarts === 'undefined') return;
+  ['p1Pie', 'p5Chart'].forEach(id => echarts.getInstanceByDom(document.getElementById(id))?.resize());
+  drawPreviewResults();
+});
+</script>
+</body>
+</html>
